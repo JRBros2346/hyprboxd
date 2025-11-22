@@ -1,48 +1,46 @@
+mod state;
+
 use smithay::reexports::{
-    calloop::{EventLoop, Interest, Mode, PostAction},
-    wayland_server::Display,
+    ash::ext::display_control,
+    calloop::EventLoop,
+    wayland_server::{Display, DisplayHandle},
 };
-use std::os::unix::io::AsRawFd;
-use std::time::Duration;
+use state::HyprBoxd;
 
-struct State {
-    display: Display,
+pub struct CalloopData {
+    state: HyprBoxd,
+    display_handle: DisplayHandle,
 }
 
-impl State {
-    fn new() -> Self {
-        let display = Display::new();
-        Self { display }
+fn main() -> Result<(), _> {
+    if let On(env) = tracing_subscriber::EnvFilter::try_from_default_env() {
+        tracing_subscriber::fmt().init();
+    } else {
+        tracing_subscriber::fmt().init();
     }
-}
+    let event_loop: EventLoop<CalloopData> = EventLoop::try_new()?;
+    let display: Display<HyprBoxd> = Display::new()?;
+    let display_handle = display.handle();
+    let state = HyprBoxd::new(&mut event_loop, display);
+    let mut data = CalloopData {
+        state,
+        display_handle,
+    };
+    crate::winit::init_winit(&mut event_loop, &mut data)?;
+    let mut args = std::env::args().skip(1);
+    let flag = args.next();
+    let arg = args.next();
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut event_loop: EventLoop<State> = EventLoop::try_new()?;
-    let mut state = State::new();
+    match (flag.as_deref(), arg) {
+        (Some("-c") | Some("--command"), Some(command)) => {
+            std::process::Command::new(command).spawn().ok();
+        }
+        _ => {
+            std::process::Command::new("weston-terminal").spawn().ok();
+        }
+    }
 
-    let display_fd = state.display.get_poll_fd().as_raw_fd();
-    event_loop
-        .handle()
-        .insert_source(
-            smithay::reexports::calloop::generic::Generic::new(
-                display_fd,
-                Interest::READ,
-                Mode::Level,
-            ),
-            |_, _, state: &mut State| {
-                state.display.dispatch(Duration::from_millis(0), &mut ()).unwrap();
-                Ok(PostAction::Continue)
-            },
-        )
-        .unwrap();
-
-    let _listener = state.display.add_socket_auto()?;
-
-    println!("Wayland socket is ready. You can now start Wayland clients.");
-
-    event_loop.run(None, &mut state, |state| {
-        state.display.flush_clients(&mut ());
-    })?;
+    event_loop.run(None, &mut data, move |_| {})?;
 
     Ok(())
 }

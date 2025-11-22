@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-smithay = "0.3.0"
+smithay = { git = "https://github.com/Smithay/smithay" }
+tracing-subscriber = "0.3.18"
